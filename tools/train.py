@@ -2,6 +2,12 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Ke Sun (sunk@mail.ustc.edu.cn)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+# TPU compatibility changes at lines:
+# - 107 - 122
+# - 233 - 246
+# - 288 - 292
 # ------------------------------------------------------------------------------
 
 import argparse
@@ -22,6 +28,19 @@ import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim
 from tensorboardX import SummaryWriter
+
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
+
 
 import _init_paths
 import models
@@ -82,17 +101,30 @@ def main():
     }
 
     # cudnn related setting
-    cudnn.benchmark = config.CUDNN.BENCHMARK
-    cudnn.deterministic = config.CUDNN.DETERMINISTIC
-    cudnn.enabled = config.CUDNN.ENABLED
-    gpus = list(config.GPUS)
-    distributed = args.local_rank >= 0
-    if distributed:
-        device = torch.device('cuda:{}'.format(args.local_rank))    
-        torch.cuda.set_device(device)
-        torch.distributed.init_process_group(
-            backend="nccl", init_method="env://",
-        )        
+    # -------------------------------------------------------------------------
+    # Adapted to TPU
+    # map_location is a torch.device object or a string containing a device tag,
+    # https://pytorch.org/docs/stable/generated/torch.load.html
+    #
+    # In theory, torch.load(net) should load the network into the processing
+    # hardware being used and should not need the extra parameter, but...
+    if torch.cuda.is_available():
+        cudnn.benchmark = config.CUDNN.BENCHMARK
+        cudnn.deterministic = config.CUDNN.DETERMINISTIC
+        cudnn.enabled = config.CUDNN.ENABLED
+        gpus = list(config.GPUS)
+        distributed = args.local_rank >= 0
+        if distributed:
+            device = torch.device('cuda:{}'.format(args.local_rank))
+            torch.cuda.set_device(device)
+            torch.distributed.init_process_group(
+                backend="nccl", init_method="env://",
+            )
+    else:
+        # Set TPU device
+        distributed = False
+        device = xm.xla_device()
+    # -------------------------------------------------------------------------
 
     # build model
     model = eval('models.'+config.MODEL.NAME +
@@ -201,17 +233,22 @@ def main():
                                     weight=train_dataset.class_weights)
 
     model = FullModel(model, criterion)
-    if distributed:
-        model = model.to(device)
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            find_unused_parameters=True,
-            device_ids=[args.local_rank],
-            output_device=args.local_rank
-        )
+    # -------------------------------------------------------------------------
+    if torch.cuda.is_available():
+        if distributed:
+            # considering distributed only if not using TPUs
+            model = model.to(device)
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                find_unused_parameters=True,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank
+            )
+        else:
+            model = nn.DataParallel(model, device_ids=gpus).cuda()
     else:
-        model = nn.DataParallel(model, device_ids=gpus).cuda()
-    
+        model = nn.DataParallel(model, device_ids=gpus).to(xm.xla_device())
+    # -------------------------------------------------------------------------
 
     # optimizer
     if config.TRAIN.OPTIMIZER == 'sgd':
@@ -250,7 +287,14 @@ def main():
         model_state_file = os.path.join(final_output_dir,
                                         'checkpoint.pth.tar')
         if os.path.isfile(model_state_file):
-            checkpoint = torch.load(model_state_file, map_location={'cuda:0': 'cpu'})
+            # -------------------------------------------------------------------------
+            # Adapted to TPU
+            if torch.cuda.is_available():
+                checkpoint = torch.load(model_state_file, map_location={'cuda:0': 'cpu'})
+            else:
+                # TPU!
+                checkpoint = torch.load(model_state_file, map_location=xm.xla_device())
+            # -------------------------------------------------------------------------
             best_mIoU = checkpoint['best_mIoU']
             last_epoch = checkpoint['epoch']
             dct = checkpoint['state_dict']

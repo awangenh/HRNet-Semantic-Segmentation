@@ -2,6 +2,11 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Ke Sun (sunk@mail.ustc.edu.cn)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+# TPU compatibility changes at lines:
+# - 89 - 93
+# - 116 - 119
 # ------------------------------------------------------------------------------
 
 import argparse
@@ -20,6 +25,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
 
 import _init_paths
 import models
@@ -71,7 +88,13 @@ def main():
     dump_input = torch.rand(
         (1, 3, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
     )
-    logger.info(get_model_summary(model.cuda(), dump_input.cuda()))
+    # --------------------------------------------------------------------------------------------------
+    if torch.cuda.is_available():
+        logger.info(get_model_summary(model.cuda(), dump_input.cuda()))
+    else:
+        # TPU!
+        logger.info(get_model_summary(model.to(xm.xla_device()), dump_input.to(xm.xla_device()))
+    # --------------------------------------------------------------------------------------------------
 
     if config.TEST.MODEL_FILE:
         model_state_file = config.TEST.MODEL_FILE
@@ -92,9 +115,14 @@ def main():
     model.load_state_dict(model_dict)
 
     gpus = list(config.GPUS)
-    model = nn.DataParallel(model, device_ids=gpus).cuda()
+    # --------------------------------------------------------------------------------------------------
+    if torch.cuda.is_available():
+        model = nn.DataParallel(model, device_ids=gpus).cuda()
+    else:
+        model = nn.DataParallel(model, device_ids=gpus).to(xm.xla_device())
+    # --------------------------------------------------------------------------------------------------
 
-    # prepare data
+        # prepare data
     test_size = (config.TEST.IMAGE_SIZE[1], config.TEST.IMAGE_SIZE[0])
     test_dataset = eval('datasets.'+config.DATASET.DATASET)(
                         root=config.DATASET.ROOT,

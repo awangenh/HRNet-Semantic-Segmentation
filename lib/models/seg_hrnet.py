@@ -2,6 +2,9 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Ke Sun (sunk@mail.ustc.edu.cn)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+# This file has no references to torch.cuda or cudnn. Nothing changed.
 # ------------------------------------------------------------------------------
 
 from __future__ import absolute_import
@@ -18,6 +21,18 @@ import torch
 import torch.nn as nn
 import torch._utils
 import torch.nn.functional as F
+
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
 
 from .bn_helper import BatchNorm2d, BatchNorm2d_class, relu_inplace
 

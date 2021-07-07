@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Ke Sun (sunk@mail.ustc.edu.cn), Jingyi Xie (hsfzxjy@gmail.com)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
 # ------------------------------------------------------------------------------
 
 from __future__ import absolute_import
@@ -18,6 +20,18 @@ import torch
 import torch.nn as nn
 import torch._utils
 import torch.nn.functional as F
+
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
 
 from .bn_helper import BatchNorm2d, BatchNorm2d_class, relu_inplace
 
@@ -659,7 +673,19 @@ class HighResolutionNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
         if os.path.isfile(pretrained):
-            pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
+            # -------------------------------------------------------------------------
+            # Adapted to TPU
+            # map_location is a torch.device object or a string containing a device tag,
+            # https://pytorch.org/docs/stable/generated/torch.load.html
+            #
+            # In theory, torch.load(net) should load the network into the processing
+            # hardware being used and should not need the extra parameter, but...
+            if torch.cuda.is_available():
+                pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
+            else:
+                # TPU!
+                pretrained_dict = torch.load(pretrained, map_location=xm.xla_device())
+            # -------------------------------------------------------------------------
             logger.info('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
             pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}  
@@ -677,6 +703,7 @@ class HighResolutionNet(nn.Module):
 
 
 def get_seg_model(cfg, **kwargs):
+    # hrnet.py has no references to torch.cuda or cudnn. Nothing changed.
     model = HighResolutionNet(cfg, **kwargs)
     model.init_weights(cfg.MODEL.PRETRAINED)
 

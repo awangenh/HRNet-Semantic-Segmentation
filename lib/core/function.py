@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Ke Sun (sunk@mail.ustc.edu.cn)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
 # ------------------------------------------------------------------------------
 
 import logging

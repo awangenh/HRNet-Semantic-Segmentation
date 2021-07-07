@@ -2,6 +2,10 @@
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by RainbowSecret (yhyuan@pku.edu.cn)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+#
+# This file has no references to torch.cuda or cudnn. Nothing changed.
 # ------------------------------------------------------------------------------
 
 import os

@@ -1,3 +1,5 @@
+# There is no equivalent in torch_xla to torch.cuda.com ....
+
 from os import path
 
 import torch.autograd as autograd

@@ -1,3 +1,5 @@
+# This file has no references to torch.cuda or cudnn. Nothing changed.
+
 import torch
 import functools
 

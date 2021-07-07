@@ -3,6 +3,9 @@
 # Licensed under the MIT License.
 # Create by Bin Xiao (Bin.Xiao@microsoft.com)
 # Modified by Ke Sun (sunk@mail.ustc.edu.cn), Rainbowsecret (yuyua@microsoft.com)
+#
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+# This file has no references to torch.cuda or cudnn. Nothing changed.
 # ------------------------------------------------------------------------------
 
 from __future__ import absolute_import
