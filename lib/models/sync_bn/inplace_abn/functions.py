@@ -1,4 +1,6 @@
 # There is no equivalent in torch_xla to torch.cuda.com ....
+# Adapted to run on Google TPUs by Aldo von Wangenheim (aldo.vw@ufsc.br)
+# ------------------------------------------------------------------------------
 
 from os import path
 
@@ -6,6 +8,18 @@ import torch.autograd as autograd
 import torch.cuda.comm as comm
 from torch.autograd.function import once_differentiable
 from torch.utils.cpp_extension import load
+
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
 
 _src_path = path.join(path.dirname(path.abspath(__file__)), "src")
 _backend = load(name="inplace_abn",

@@ -24,6 +24,17 @@ from utils.utils import adjust_learning_rate
 
 import utils.distributed as dist
 
+# ----------------------------------------------------------------------------
+# TPU support
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
+import torch_xla.debug.metrics as met
+# Parallel loader and multiproc on TPUs
+import torch_xla.distributed.data_parallel as dp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
+# ----------------------------------------------------------------------------
 
 def reduce_tensor(inp):
     """
@@ -53,8 +64,12 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
 
     for i_iter, batch in enumerate(trainloader, 0):
         images, labels, _, _ = batch
-        images = images.cuda()
-        labels = labels.long().cuda()
+        if torch.cuda.is_available():
+            images = images.cuda()
+            labels = labels.long().cuda()
+        else:
+            images = images.to(xm.xla_device())
+            labels = labels.long().to(xm.xla_device())
 
         losses, _ = model(images, labels)
         loss = losses.mean()
@@ -100,8 +115,12 @@ def validate(config, testloader, model, writer_dict):
         for idx, batch in enumerate(testloader):
             image, label, _, _ = batch
             size = label.size()
-            image = image.cuda()
-            label = label.long().cuda()
+            if torch.cuda.is_available():
+                images = images.cuda()
+                labels = labels.long().cuda()
+            else:
+                images = images.to(xm.xla_device())
+                labels = labels.long().to(xm.xla_device())
 
             losses, pred = model(image, label)
             if not isinstance(pred, (list, tuple)):
@@ -131,7 +150,10 @@ def validate(config, testloader, model, writer_dict):
             ave_loss.update(reduced_loss.item())
 
     if dist.is_distributed():
-        confusion_matrix = torch.from_numpy(confusion_matrix).cuda()
+        if torch.cuda.is_available():
+            confusion_matrix = torch.from_numpy(confusion_matrix).cuda()
+        else:
+            confusion_matrix = torch.from_numpy(confusion_matrix).to(xm.xla_device())
         reduced_confusion_matrix = reduce_tensor(confusion_matrix)
         confusion_matrix = reduced_confusion_matrix.cpu().numpy()
 
